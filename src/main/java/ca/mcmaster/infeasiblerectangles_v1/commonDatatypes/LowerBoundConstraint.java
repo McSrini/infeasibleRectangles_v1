@@ -33,7 +33,14 @@ public class LowerBoundConstraint {
         
     }
     
-  
+    //even with the worst possible choice of free vars, am I still feasible ?
+    public boolean isGauranteedFeasible (boolean isStrict){
+        double worstValue = ZERO ;
+        for (VariableCoefficientTuple tuple : sortedConstraintExpr) {
+            if (tuple.coeff<ZERO)    worstValue +=tuple.coeff;
+        }
+        return isStrict? (worstValue > this.lowerBound) : (worstValue >= this.lowerBound);
+    }
     
     public String toString() {
         String str = "Constraint name "+ name ;

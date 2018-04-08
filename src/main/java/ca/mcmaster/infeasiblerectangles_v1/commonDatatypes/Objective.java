@@ -6,6 +6,7 @@
 package ca.mcmaster.infeasiblerectangles_v1.commonDatatypes;
 
 import ca.mcmaster.infeasiblerectangles_v1.IR_Driver; 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -18,12 +19,22 @@ import java.util.Map;
 public class Objective {
         
     public List<VariableCoefficientTuple>   objectiveExpr ; 
+    
+    private Map<String, Double> coeffs = new HashMap <String, Double> ();
       
     public Objective( List<VariableCoefficientTuple>  expr   ) {
          
-        Collections.sort(expr);
+         
         objectiveExpr = expr;
+        for (VariableCoefficientTuple tuple : this.objectiveExpr){
+            this.coeffs.put(tuple.varName, Math.abs(tuple.coeff));
+        }
         
+    }
+    
+    public Double getObjectiveCoeff( String  var ){
+         
+        return coeffs.get(var);
     }
     
     public String toString() {

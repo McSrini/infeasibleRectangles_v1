@@ -10,10 +10,12 @@ import static ca.mcmaster.infeasiblerectangles_v1.Constants.LOG_FOLDER;
 import static ca.mcmaster.infeasiblerectangles_v1.Constants.ONE;
 import static ca.mcmaster.infeasiblerectangles_v1.Constants.ZERO;
 import static ca.mcmaster.infeasiblerectangles_v1.Parameters.MIP_EMHPASIS_FOR_COLLECTION;
+import static ca.mcmaster.infeasiblerectangles_v1.Parameters.MIP_EMHPASIS_FOR_SOLUTION;
 import static ca.mcmaster.infeasiblerectangles_v1.Parameters.MIP_FILENAME;
 import static ca.mcmaster.infeasiblerectangles_v1.Parameters.MIP_GAP_PERCENT;
 import static ca.mcmaster.infeasiblerectangles_v1.Parameters.NODEFILE_TO_DISK;
 import static ca.mcmaster.infeasiblerectangles_v1.Parameters.TIME_LIMIT_PER_CONSRAINT_FOR_INFEASIBLE_RECTANGLE_COLLECTION_SECONDS;
+import static ca.mcmaster.infeasiblerectangles_v1.Parameters.USE_MIP_GAP;
 import static ca.mcmaster.infeasiblerectangles_v1.Parameters.USE_MULTITHREADING_WITH_THIS_MANY_THREADS;
 import ca.mcmaster.infeasiblerectangles_v1.cplex.BranchHandler;
 import ca.mcmaster.infeasiblerectangles_v1.cplex.IncumbentHandler;
@@ -62,6 +64,7 @@ public class Solver {
         
     }
     
+  
     public Solver () throws IloException{
         
         //import mip into ilocplex
@@ -84,10 +87,15 @@ public class Solver {
         
         branchHandler = new CB_BranchHandler(modelVars) ;
         cplex.use(branchHandler) ;
+        //cplex.use (new CB_Nodehandler()) ;
         
         cplex.setParam(IloCplex.Param.MIP.Strategy.File, NODEFILE_TO_DISK);
-        cplex.setParam(IloCplex.Param.MIP.Tolerances.MIPGap, MIP_GAP_PERCENT);
+        if (USE_MIP_GAP) cplex.setParam(IloCplex.Param.MIP.Tolerances.MIPGap, MIP_GAP_PERCENT);
         //set solution params
+        cplex.setParam(  IloCplex.IntParam.HeurFreq , -ONE);
+        cplex.setParam(IloCplex.Param.MIP.Limits.CutPasses,ZERO);        
+        cplex.setParam(IloCplex.Param.Preprocessing.Presolve, false);
+        cplex.setParam(IloCplex.Param.Emphasis.MIP, MIP_EMHPASIS_FOR_SOLUTION);
         //cplex.setParam(  IloCplex.IntParam.HeurFreq , -ONE);
         //cplex.setParam(IloCplex.Param.MIP.Limits.CutPasses,ZERO);        
         //cplex.setParam(IloCplex.Param.Preprocessing.Presolve, false);
@@ -104,6 +112,14 @@ public class Solver {
         
         cplex.solve();
         
-        if ((isVanilla)) logger.debug ("vanilla solve made branches "+ ebh.numBranches);
+        IloLPMatrix lpMatrix = (IloLPMatrix)cplex.LPMatrixIterator().next();
+        IloNumVar[] variables  =lpMatrix.getNumVars();
+        
+        for (IloNumVar var : variables) {
+            System.out.println(" var is " + var.getName() + " has value " + cplex.getValue(var)) ;
+        }
+        
+        
+        if ((isVanilla)) System.out.println("vanilla solve made branches "+ ebh.numBranches + " and has optimal " + cplex.getObjValue());
     }
 }

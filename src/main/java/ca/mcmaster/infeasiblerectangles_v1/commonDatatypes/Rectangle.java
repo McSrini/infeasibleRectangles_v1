@@ -23,7 +23,8 @@ public class Rectangle {
     public List <String> oneFixedVariables = new ArrayList <String>();
     
     public double lpRelaxValueMinimization;     
-    public double maximization_lpRelaxValue;     
+    //public double maximization_lpRelaxValue;  
+    
          
     private static Logger logger=Logger.getLogger(Rectangle.class);
         
@@ -52,6 +53,10 @@ public class Rectangle {
       
     }
     
+    public int getDepth () {
+        return this.zeroFixedVariables.size()+this.oneFixedVariables.size();
+    }
+    
     //get min possible value
     public double getLpRelaxValueMinimization () {
         
@@ -69,12 +74,12 @@ public class Rectangle {
     }
     
     public String toString (){
-        String result="" ;
-        result += "zero fixed vars :";
+        String result=" lp realx " + this.lpRelaxValueMinimization;
+        result += " --- Zero fixed vars :";
         for (String str: zeroFixedVariables){
             result += str + ",";
         }
-        result += "\none fixed vars :";
+        result += "  -- One fixed vars :";
         for (String str: oneFixedVariables){
             result += str + ",";
         }

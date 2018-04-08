@@ -17,16 +17,26 @@ public class UpperBoundedConstarint {
      
     public List<VariableCoefficientTuple>   sortedConstraintExpr = new ArrayList<VariableCoefficientTuple>() ;     
     public double upperBound; 
+    
+    public String name;
      
     //private constructor for local use in this file
-    private   UpperBoundedConstarint(  ){
-        
+    private   UpperBoundedConstarint( String name  ){
+        this.name = name;
     }
     
+    public boolean isTrivially_Infeasible ( boolean isStrict){
+        return this.sortedConstraintExpr.size()==ZERO && (isStrict ? upperBound <=ZERO: upperBound <ZERO);
+    }
+
+    public boolean isTrivially_Feasible (boolean isStrict){
+        return this.sortedConstraintExpr.size()==ZERO && (isStrict ? upperBound >ZERO : upperBound >=ZERO);
+    }
     
     public UpperBoundedConstarint (LowerBoundConstraint lbc) {
         this.sortedConstraintExpr.addAll(lbc.sortedConstraintExpr );
         this.upperBound = lbc.lowerBound;
+        this.name=lbc.name;
     }
     
     //even with the worst possible choice of free vars, am I still feasible ?
@@ -38,10 +48,20 @@ public class UpperBoundedConstarint {
         return isStrict? (worstValue < this.upperBound) : (worstValue <= this.upperBound);
     }
     
-        //constraint  , disregarding fixed vars    
+    //with best possible choice of free vars, am I still unfeasible?
+    //in other words , the best possible minimum is still larger than the upper bound
+    public boolean isGauranteed_INFeasible (boolean isStrict){
+        double bestvalue = ZERO;
+        for (VariableCoefficientTuple tuple : sortedConstraintExpr) {
+            if (tuple.coeff<ZERO)    bestvalue +=tuple.coeff;
+        }
+        return isStrict? (bestvalue >= this.upperBound) : (bestvalue >  this.upperBound);
+    }
+        
+    //constraint  , disregarding fixed vars    
     public UpperBoundedConstarint  getReducedConstraint (  List <String> varsFixedAtZero, List <String> varsFixedAtOne){
         
-        UpperBoundedConstarint reducedConstraint = new UpperBoundedConstarint();
+        UpperBoundedConstarint reducedConstraint = new UpperBoundedConstarint(this.name);
         
         reducedConstraint.sortedConstraintExpr = new ArrayList<VariableCoefficientTuple> ();
         reducedConstraint.upperBound = this.upperBound;
@@ -66,5 +86,12 @@ public class UpperBoundedConstarint {
         return reducedConstraint;
     }
     
-    
+    public String toString() {
+        String str = "Constraint name "+ name ;
+        str+=("Upper bound is "+ this.upperBound+"\n");
+        for (VariableCoefficientTuple tuple : sortedConstraintExpr) {
+            str += ("Var is " + tuple.varName  + " and its coeff is "+ tuple.coeff+"\n") ;
+        }
+        return str;
+    }
 }

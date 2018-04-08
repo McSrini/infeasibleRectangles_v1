@@ -14,6 +14,7 @@ import java.util.Map;
 import static ca.mcmaster.infeasiblerectangles_v1.Constants.*;
 import ca.mcmaster.infeasiblerectangles_v1.IR_Driver;
 import static ca.mcmaster.infeasiblerectangles_v1.Parameters.MIP_FILENAME;
+import static ca.mcmaster.infeasiblerectangles_v1.Parameters.USE_STRICT_INEQUALITY;
 import ca.mcmaster.infeasiblerectangles_v1.commonDatatypes.*;
 import ca.mcmaster.infeasiblerectangles_v1.commonDatatypes.Rectangle; 
 import static java.lang.System.exit;
@@ -44,7 +45,7 @@ public class BranchHandler  extends IloCplex.BranchCallback {
     private static Logger logger=Logger.getLogger(BranchHandler.class);
     
     static {
-        logger.setLevel(Level.OFF);
+        logger.setLevel(Level.ERROR);
         PatternLayout layout = new PatternLayout("%5p  %d  %F  %L  %m%n");     
         try {
             logger.addAppender(new  RollingFileAppender(layout,LOG_FOLDER+BranchHandler.class.getSimpleName()+ LOG_FILE_EXTENSION));
@@ -78,6 +79,7 @@ public class BranchHandler  extends IloCplex.BranchCallback {
         if ( getNbranches()> ZERO ){  
             
             //double lpRelax = getObjValue() ;
+            
                        
             //get the node attachment for this node, any child nodes will accumulate the branching conditions
             if (null==getNodeData()){
@@ -87,36 +89,78 @@ public class BranchHandler  extends IloCplex.BranchCallback {
             } 
             
             NodeAttachment nodeData = (NodeAttachment) getNodeData();
+            
+            //debug
+            /*
+            String zeroFixedvars = "";
+            String oneFixedVars = "";
+            for (String var : nodeData.zeroFixedVariables){
+                zeroFixedvars+=var;
+            }
+            for (String var : nodeData.oneFixedVariables){
+                oneFixedVars+=var;
+            }
+            logger.error( "This node zero fixed vars " +zeroFixedvars);
+            logger.error( "This node one  fixed vars " +oneFixedVars);
+            
+            
+                   */          
+            
+            //end debug
                 
             if (nodeData.isRectangular){
-                //collect and prune
-                Rectangle rectangle = new Rectangle (nodeData.zeroFixedVariables, nodeData.oneFixedVariables);      
-                rectangle.maximization_lpRelaxValue = getObjValue();
-                
-                int depth = nodeData.zeroFixedVariables.size() + nodeData.oneFixedVariables.size() ;
-                List<Rectangle> rectListAtThisDepth = IR_Driver.rectangleCollection.get(depth);
-                if (rectListAtThisDepth==null) rectListAtThisDepth = new ArrayList<Rectangle>();
-                rectListAtThisDepth.add(rectangle);
-                IR_Driver.rectangleCollection.put (depth, rectListAtThisDepth);
-                
-                //discard this leaf node - we have collected the rectangle
-                prune() ; 
-                
+                 //collect and prune
+                    Rectangle rectangle = new Rectangle (nodeData.zeroFixedVariables, nodeData.oneFixedVariables);      
+
+                    double lp   = rectangle.getLpRelaxValueMinimization();
+                    List<Rectangle> rectHavingThisDepth = IR_Driver.rectangleBuffer.get(lp);
+                    if (rectHavingThisDepth==null) rectHavingThisDepth = new ArrayList<Rectangle>();
+                    rectHavingThisDepth.add(rectangle);
+                    IR_Driver.rectangleBuffer.put (lp, rectHavingThisDepth);
+
+                    //discard this leaf node - we have collected the rectangle
+                    prune() ; 
             } else if (nodeData.wasSolutionRejected){
+                
+                Rectangle solutionPoint = new Rectangle (getFixedVarsAtSolutionPoint(ZERO),    getFixedVarsAtSolutionPoint(ONE));   
+                
+                
+                
+                
+                //if some free vars left, we branch on one of them, else
+                //we collect the point solution that was rejected and prune this nude ( pruning not needed I think)
+                
                 //decide bracnhing var - it will the highest free coeff remaining in the constraint
                 int reducedConstraintSize = nodeData.reducedConstraint.sortedConstraintExpr.size();
                 
-                //if we have a point solution that is exactly on the constraint, it can be rejected if USE_STRICT_INEQUALITY is false
-                if (reducedConstraintSize>ZERO) {
-                    String branchingVar = nodeData.reducedConstraint.sortedConstraintExpr.get(reducedConstraintSize-ONE).varName;
-                
+                //if there is any free variable, then branch on the best such var
+                if (reducedConstraintSize > ZERO) {
+                    String branchingVar = nodeData.reducedConstraint.sortedConstraintExpr.get(reducedConstraintSize-ONE).varName;                
                     //branch on var chosen above and propogate node data to child nodes
                     branch ( branchingVar,   nodeData);
                 } else {
-                    //reject this point
+                    //all vars fixed already, can happen if there is only 1 solution and it at a triangle corner
+                    //collect point solution unless it is on original constrain plane and strict is ON
+                    //collect non-rect solutions as points
+
+                    boolean solutionLiesExactlyOnOriginalConstraintPlane = 
+                                doesSolutionLieExactlyOnOriginalConstraintPlane(solutionPoint.zeroFixedVariables, solutionPoint.oneFixedVariables);
+
+                    if (!USE_STRICT_INEQUALITY && solutionLiesExactlyOnOriginalConstraintPlane) {
+                        //do not collect    
+                        logger.error("Solution point rejected "+ solutionPoint) ;                    
+                    }else {
+                        logger.error("Solution point collected "+ solutionPoint) ;
+                        //collect the point
+                        double lp   = solutionPoint.getLpRelaxValueMinimization();
+                        List<Rectangle> rectHavingThisDepth = IR_Driver.rectangleBuffer.get(lp);
+                        if (rectHavingThisDepth==null) rectHavingThisDepth = new ArrayList<Rectangle>();
+                        rectHavingThisDepth.add(solutionPoint);
+                        IR_Driver.rectangleBuffer.put (lp, rectHavingThisDepth);
+                    }   
+                    
                     prune();
                 }
-                
                 
             } else {
                 //branch on default var and propogate node data to child nodes
@@ -125,6 +169,22 @@ public class BranchHandler  extends IloCplex.BranchCallback {
         }//end else if branches >0
             
     }//emd main
+    
+       
+    private boolean doesSolutionLieExactlyOnOriginalConstraintPlane(List <String> zeroFixedVariables , List <String> oneFixedVariables ){
+        UpperBoundedConstarint reducedConstarint =  currentConstraintRoot.getReducedConstraint(zeroFixedVariables ,  oneFixedVariables  );
+        return reducedConstarint.upperBound==ZERO;
+    }
+    
+    private List<String> getFixedVarsAtSolutionPoint(int fixed) throws IloException {
+        List<String> result = new ArrayList<String> ();
+        for (IloNumVar var : this.modelVars.values()){
+            if (Math.round(getValue(var)) ==fixed) {
+                result.add(var.getName());
+            }
+        }
+        return result;
+    }
     
     private void branch (String branchingVar,  NodeAttachment nodeData) throws IloException{
         

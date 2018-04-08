@@ -7,10 +7,12 @@ package ca.mcmaster.infeasiblerectangles_v1;
 
 import static ca.mcmaster.infeasiblerectangles_v1.Constants.*;
 import static ca.mcmaster.infeasiblerectangles_v1.Parameters.MIP_FILENAME;
+import ca.mcmaster.infeasiblerectangles_v1.analytic.Collector;
+import ca.mcmaster.infeasiblerectangles_v1.analytic.Tester;
+import ca.mcmaster.infeasiblerectangles_v1.analytic.solver.AnalyticSolver;
 import ca.mcmaster.infeasiblerectangles_v1.commonDatatypes.*;
 import ca.mcmaster.infeasiblerectangles_v1.commonDatatypes.Rectangle; 
-import ca.mcmaster.infeasiblerectangles_v1.cplex.MIP_Creator;
-import ca.mcmaster.infeasiblerectangles_v1.cplex.solver.BranchingVariableFinder;
+import ca.mcmaster.infeasiblerectangles_v1.cplex.MIP_Creator; 
 import ca.mcmaster.infeasiblerectangles_v1.cplex.solver.Solver;
 import ilog.concert.IloException;
 import ilog.concert.IloLPMatrix;
@@ -43,10 +45,10 @@ public class IR_Driver {
     public static List<LowerBoundConstraint> mipConstraintList ;
     public static Objective objective ;
     
-    //rectangles collected by the branch callback for 1 constraint, key is depth from root
-    public static Map<Integer, List<Rectangle>  > rectangleCollection = new TreeMap <Integer, List<Rectangle>>  ();    
-    //each bucket has rectangles collected for a constraint . Key is depth from
-    public static Map<Integer, List<Rectangle> > infeasibleRectanglesCumulative  = new TreeMap<Integer,  List<Rectangle> >();
+    //rectangles collected by the branch callback for 1 constraint 
+    public static Map<Double, List<Rectangle>  > rectangleBuffer = new TreeMap <Double, List<Rectangle>>  ();    
+    //cumulative with all rects collected
+    public static Map<Double, List<Rectangle> > infeasibleRectangle_Cumulative_Collection  = new TreeMap<Double,  List<Rectangle> >();
       
     private static Logger logger=Logger.getLogger(IR_Driver.class);
     
@@ -84,9 +86,10 @@ public class IR_Driver {
         mipConstraintList= getConstraints(mip);
         objective= getObjective(mip);
         
-        logger.debug ("Starting rectangle collection ... " ) ;
+        System.out.println ("Starting rectangle collection ... " + MIP_FILENAME) ;
         //solve for each constraint, i.e. collect rectangles for each constraint into infeasibleRectanglesByConstraint
-        for (int index = ZERO ; index <mipConstraintList.size() && ! isHaltFilePresent (); index ++ ) {
+        
+        /*for (int index = ZERO ; index <mipConstraintList.size() && ! isHaltFilePresent (); index ++ ) {
             MIP_Creator  mipWithOneConstraint = 
                     new MIP_Creator (   mipConstraintList.get(index)   );
            
@@ -94,33 +97,76 @@ public class IR_Driver {
             //solve this mip to collect all its rectangles
             mipWithOneConstraint.cplex.solve();
             //move all the rectangles into the variable infeasibleRectanglesByConstraint
-            if (rectangleCollection.size()>ZERO) {
+            if (rectangleBuffer.size()>ZERO) {
                 
                 logger.debug ("for constraint " + index + 
                     " having name " +mipConstraintList.get(index).name + 
-                    " there are this many rects " + getNumberOfRects(rectangleCollection)  );
+                    " there are this many rects " + getNumberOfRects(rectangleBuffer)  );
                 
                 
-                /*
-                for (int depth : rectangleCollection.keySet()){
-                    List<Rectangle> rectanglesAtDepth = rectangleCollection.get(depth);
-                    logger.debug ("depth is " + depth );
+                
+                for (double lp : rectangleBuffer.keySet()){
+                    List<Rectangle> rectanglesAtDepth = rectangleBuffer.get(lp);
+                    logger.debug ("lp is " + lp );
                     if (rectanglesAtDepth!=null){
                         for (Rectangle rect : rectanglesAtDepth)   {
                             logger.debug (rect) ;
-                            logger.debug ("lp relax value for maximization is " +rect.maximization_lpRelaxValue ) ;
+                            logger.debug ("lp relax value for minimization is " +rect.lpRelaxValueMinimization + " check lp is "+ lp) ;
                         }
                     }
-                }*/
+                } 
                 
-                saveToMap( rectangleCollection, infeasibleRectanglesCumulative) ;
+                saveRectanglesToMap(  ) ;
                 //clear rectanle collection before solving fro next constraint
-                rectangleCollection.clear();
+                rectangleBuffer.clear();
             }            
+        }*/
+        
+        for (int index = ZERO ; index <mipConstraintList.size() && ! isHaltFilePresent (); index ++ ) {
+            
+            UpperBoundedConstarint ubc = new UpperBoundedConstarint( mipConstraintList.get(index)) ;
+            Collector collector = new Collector (ubc);
+            collector.collect();
+            
+            //System.out.println("test results for constraint "+ index) ;
+            //Tester tester = new Tester (collector.collectedFeasibleRectangles);
+            
+            
+            rectangleBuffer=collector.collectedFeasibleRectangles;
+            
+            if (rectangleBuffer.size()>ZERO) {
+                
+                logger.debug ("for constraint " + index + 
+                    " having name " +mipConstraintList.get(index).name + 
+                    " there are this many rects " + getNumberOfRects(rectangleBuffer)  );
+                
+                /*
+                for (double lp : rectangleBuffer.keySet()){
+                    List<Rectangle> rectanglesAtDepth = rectangleBuffer.get(lp);
+                    logger.debug ("lp is " + lp );
+                    if (rectanglesAtDepth!=null){
+                        for (Rectangle rect : rectanglesAtDepth)   {
+                            logger.debug (rect) ;
+                            logger.debug ("lp relax value for minimization is " +rect.lpRelaxValueMinimization  ) ;
+                        }
+                    }
+                } 
+                */
+                
+                saveRectanglesToMap(  ) ;
+                //clear rectanle collection before solving fro next constraint
+                rectangleBuffer.clear();
+            }  
         }
    
         logger.debug ("Starting solve ... " ) ;
-        Solver solver = new Solver();
+        AnalyticSolver solver = new AnalyticSolver( infeasibleRectangle_Cumulative_Collection);
+        solver.solve();
+        
+        
+        //test knapsack 3 with equality constrainst , maybe okay becase no longer creating branches when no vars free to move
+       
+        /*Solver solver = new Solver();
         solver.solve(false);
         logger.debug ("Status is " + solver.cplex.getStatus()) ;
         if (solver.cplex.getStatus().equals(Status.Optimal)) {
@@ -128,26 +174,28 @@ public class IR_Driver {
         }
         logger.debug ("Custom branch count is "+ solver.branchHandler.customBranchingDecisions);
         logger.debug ("Cplex default branch count is "+ solver.branchHandler.cplexDefualtBranchDecisions);
-        
+        */
         logger.debug ("Start vanilla solve ") ;
-        //solver.solve(true);
+        //(new Solver()) .solve(true );
         logger.debug ("Completed vanilla solve ") ;
+        
         
     }//end main
     
-    private static void saveToMap ( Map<Integer, List<Rectangle> > src , Map<Integer, List<Rectangle> > dest ){
-        for (int depth : rectangleCollection.keySet()){
-            List<Rectangle> new_rectanglesAtDepth = rectangleCollection.get(depth);             
+    private static void saveRectanglesToMap (   ){
+        for (double lp : rectangleBuffer .keySet()){
+            List<Rectangle> new_rectanglesAtDepth = rectangleBuffer .get(lp);             
             if (new_rectanglesAtDepth!=null){
-                 List<Rectangle> existingRectanglesAtDepth =  infeasibleRectanglesCumulative.get(depth);         
+                 List<Rectangle> existingRectanglesAtDepth =  infeasibleRectangle_Cumulative_Collection.get(lp);         
                  if (existingRectanglesAtDepth==null) existingRectanglesAtDepth= new ArrayList<Rectangle>();
                  existingRectanglesAtDepth.addAll(new_rectanglesAtDepth) ;
-                 infeasibleRectanglesCumulative.put(depth, existingRectanglesAtDepth);         
+                 infeasibleRectangle_Cumulative_Collection.put(lp, existingRectanglesAtDepth);         
             }
         }
+        logger.debug ("infeasibleRectangle_Collection_Cumulative total rects "+getNumberOfRects( infeasibleRectangle_Cumulative_Collection) );
     }
     
-    private static int getNumberOfRects ( Map<Integer, List<Rectangle> > map2){
+    private static int getNumberOfRects ( Map<Double, List<Rectangle> > map2){
         int count = ZERO;
         for (List<Rectangle> rectlist : map2.values()){
             count +=rectlist.size();

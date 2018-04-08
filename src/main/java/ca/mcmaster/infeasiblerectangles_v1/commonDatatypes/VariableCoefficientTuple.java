@@ -11,7 +11,7 @@ import static ca.mcmaster.infeasiblerectangles_v1.Constants.ONE;
  *
  * @author tamvadss
  */
-public class VariableCoefficientTuple  implements Comparable{
+public class VariableCoefficientTuple   implements Comparable{
     
     public String varName ;
     public Double coeff;
@@ -24,7 +24,7 @@ public class VariableCoefficientTuple  implements Comparable{
        
     //lowest magnitude coeff first
     public int compareTo(Object other) {
-        return Math.abs(this.coeff )> Math.abs(  ((VariableCoefficientTuple)other).coeff )? ONE:-ONE;
-    }    
-    
+       return Math.abs(this.coeff )> Math.abs(  ((VariableCoefficientTuple)other).coeff )? ONE:-ONE;
+    } 
+
 }

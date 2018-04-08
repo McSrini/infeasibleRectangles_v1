@@ -25,9 +25,7 @@ public class NodeAttachment {
     
     //intger vertex , may or may not be a rectangle
     public boolean wasSolutionRejected = false;
-    
-     
-    
+   
     public NodeAttachment (List <String> zeroFixedVariables , List <String> oneFixedVariables, UpperBoundedConstarint reducedConstraint ) {
         this.reducedConstraint= reducedConstraint;
         this.zeroFixedVariables.addAll(zeroFixedVariables);

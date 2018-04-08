@@ -10,7 +10,8 @@ import static ca.mcmaster.infeasiblerectangles_v1.Constants.LOG_FOLDER;
 import static ca.mcmaster.infeasiblerectangles_v1.Constants.ONE;
 import static ca.mcmaster.infeasiblerectangles_v1.Constants.TWO;
 import static ca.mcmaster.infeasiblerectangles_v1.Constants.ZERO;
-import ca.mcmaster.infeasiblerectangles_v1.IR_Driver;
+import ca.mcmaster.infeasiblerectangles_v1.IR_Driver; 
+import ca.mcmaster.infeasiblerectangles_v1.commonDatatypes.Rectangle;
 import ilog.concert.IloException;
 import ilog.concert.IloNumVar;
 import ilog.cplex.IloCplex;
@@ -32,18 +33,16 @@ import org.apache.log4j.RollingFileAppender;
  */
 public class CB_BranchHandler extends IloCplex.BranchCallback {
     
+    //these two for statistics
     public long customBranchingDecisions = ZERO;
     public long cplexDefualtBranchDecisions = ZERO;
-        
-   
-    //note down vars in the model, key by name
-    private Map<String, IloNumVar> modelVars;
-     
     
+    //note down vars in the model, key by name
+    private Map<String, IloNumVar> modelVars; 
     private static Logger logger=Logger.getLogger(CB_BranchHandler.class);
     
     static {
-        logger.setLevel(Level.OFF);
+        logger.setLevel(Level.WARN);
         PatternLayout layout = new PatternLayout("%5p  %d  %F  %L  %m%n");     
         try {
             logger.addAppender(new  RollingFileAppender(layout,LOG_FOLDER+CB_BranchHandler.class.getSimpleName()+ LOG_FILE_EXTENSION));
@@ -60,50 +59,53 @@ public class CB_BranchHandler extends IloCplex.BranchCallback {
     public  CB_BranchHandler(Map<String, IloNumVar> modelVars){
          this.modelVars=modelVars;
     }
-        
-    //public  CB_BranchHandler(Map<String, IloNumVar> modelVars,   List <String> _zeroFixedVariables, List <String> _oneFixedVariables){
-        //this. modelVars= modelVars;
-        //zeroFixedVariables=zeroFixedVariables;
-        //oneFixedVariables=oneFixedVariables;
-         
-    //}
  
     protected void main() throws IloException {
         if ( getNbranches()> ZERO                                      ){  
                        
             //get the node attachment for this node, any child nodes will accumulate the branching conditions
             if (null==getNodeData()){
-                //root of mip                                
-                List <String> branchingOrder = getBranchingOrder (new ArrayList<String>(), new ArrayList<String>());                 
-                CB_NodeAttachment data = new CB_NodeAttachment (  new ArrayList<String>(), new ArrayList<String>(),    branchingOrder );
+                //root of mip                                                              
+                CB_NodeAttachment data = new CB_NodeAttachment (  new ArrayList<String>(), new ArrayList<String>() ,
+                          IR_Driver.infeasibleRectangle_Cumulative_Collection);
                 setNodeData(data);                
             } 
             
             CB_NodeAttachment nodeData = (CB_NodeAttachment) getNodeData();
             
             //if node data has no branching variable recommendations, try to refresh those 
-            if (nodeData.branchingVariablesInPriorityOrder.size()==ZERO){
+            /*if (nodeData.branchingVariablesInPriorityOrder.size()==ZERO){
+                logger.debug("calculating best branching order ... " );
                 List <String> branchingOrder =getBranchingOrder( nodeData.zeroFixedVariables,  nodeData.oneFixedVariables );
                 nodeData.branchingVariablesInPriorityOrder.addAll(branchingOrder);
-            }
+                if (branchingOrder.size()>ZERO) {
+                    logger.info(" branching order best var is "+ branchingOrder.get(ZERO) + " and list size "+branchingOrder.size());
+                } else {
+                    logger.info("no branching recommendation, will use cplex default. There should not be many such lines in the log !") ;
+                }
+            }*/
             
-            //if we have bracnhing suggestion, use it
-            //else use cplex default
-            //send forward node attachment in any case
-            String branchingVar = nodeData.branchingVariablesInPriorityOrder.size()>ZERO ? nodeData.branchingVariablesInPriorityOrder.get(ZERO) : null;
+            BranchingUtils utils = new BranchingUtils( );
+            String branchingVar =  null;
+            if ( !nodeData.startUsingCplexDefaults ) {
+                logger.warn ("getBestChoiceBranchingVariable start") ;
+                String bestBranchVar = utils.getBestChoiceBranchingVariable (  nodeData.myCompatibleRectangles, 
+                                          nodeData.zeroFixedVariables, nodeData.oneFixedVariables).varName; 
+                if (bestBranchVar!=null) {
+                    logger.warn (" Best Choice Branching Variable  is "+ bestBranchVar) ;
+                }else {
+                    logger.error (" Could not find Branching Variable    ") ;
+                }
+            }
+             
+                                        
+            
              
             branch ( branchingVar,    nodeData);
             
         }//end else if branches >0
     }
     
-    private List <String> getBranchingOrder(List<String> zeroFixes,  List<String> oneFixes ){
-        
-        BranchingVariableFinder branchingVariableFinder = new BranchingVariableFinder (IR_Driver.infeasibleRectanglesCumulative, 
-                                                                                               new ArrayList<String> (this.modelVars.keySet())) ;
-        
-        return  branchingVariableFinder.getBranchingVariablesInPriorityOrder(zeroFixes, oneFixes);
-    }
     
     private void branch (String branchingVar,   CB_NodeAttachment nodeData  ) throws IloException{
         
@@ -147,7 +149,17 @@ public class CB_BranchHandler extends IloCplex.BranchCallback {
                 logger.debug("one var are " +str);
         }
               
-        //debug print
+        //get the descendant rectangles for each child
+        BranchingUtils utils = new BranchingUtils( );
+        if (!nodeData.startUsingCplexDefaults){
+            logger.warn("start split") ;
+            logger.warn("Size before split "+ getNumberOfRects(nodeData.myCompatibleRectangles));
+            utils.split(nodeData.myCompatibleRectangles , vars[ZERO][ZERO].getName(), nodeData.zeroFixedVariables, nodeData.oneFixedVariables);
+            logger.warn("Size after 0 split "+ getNumberOfRects(utils.rectangle_Compatible_With_Zero_Side));
+            logger.warn("Size after 1 split "+ getNumberOfRects(utils.rectangle_Compatible_With_One_Side));
+            logger.warn("end  split") ;
+        }
+        
         
         for (int childNum = ZERO ;childNum<TWO;  childNum++) {  
             String branchingVarName = vars[childNum][ZERO].getName();
@@ -167,15 +179,29 @@ public class CB_BranchHandler extends IloCplex.BranchCallback {
 
             zeroFixedVariables.addAll(nodeData.zeroFixedVariables  );
             oneFixedVariables.addAll(nodeData.oneFixedVariables );
+             
             
-            int size = nodeData.branchingVariablesInPriorityOrder.size();
-            List<String>  branchingVariableRecommendationsForChildNode = new ArrayList<String> ();
-            if (size>ONE)  branchingVariableRecommendationsForChildNode = nodeData.branchingVariablesInPriorityOrder.subList(ONE, size);
-            CB_NodeAttachment thisChild  =  new CB_NodeAttachment (zeroFixedVariables, oneFixedVariables  , branchingVariableRecommendationsForChildNode); 
+            CB_NodeAttachment thisChild  =  new CB_NodeAttachment(true);                    
+            if (!nodeData.startUsingCplexDefaults) {
+                if (isZeroFix) {
+                    if (utils.rectangle_Compatible_With_Zero_Side .size()>ZERO)    thisChild =  
+                            new CB_NodeAttachment (zeroFixedVariables, oneFixedVariables  ,      utils.rectangle_Compatible_With_Zero_Side  );
+                }else {
+                    if (utils.rectangle_Compatible_With_One_Side  .size()>ZERO)    thisChild =  
+                            new CB_NodeAttachment (zeroFixedVariables, oneFixedVariables  ,  utils.rectangle_Compatible_With_One_Side);
+                }                
+            } 
             makeBranch( vars[childNum],  bounds[childNum],dirs[childNum], getObjValue(), thisChild);
         }
         
     }
-    
-    
+            
+    private static int getNumberOfRects ( Map<Double, List<Rectangle> > map2){
+        int count = ZERO;
+        for (List<Rectangle> rectlist : map2.values()){
+            count +=rectlist.size();
+        }
+        return count;
+    }
+ 
 }

@@ -119,6 +119,8 @@ public class MIP_Creator {
         cplex.setParam(  IloCplex.IntParam.HeurFreq , -ONE);
         cplex.setParam(IloCplex.Param.MIP.Limits.CutPasses,ZERO);        
         cplex.setParam(IloCplex.Param.Preprocessing.Presolve, false);
+        cplex.setParam(IloCplex .IntParam.Reduce  ,ZERO);
+        
         //emphasis  optimality
         cplex.setParam(IloCplex.Param.Emphasis.MIP, MIP_EMHPASIS_FOR_COLLECTION);
         cplex.setParam(IloCplex.Param.TimeLimit, TIME_LIMIT_PER_CONSRAINT_FOR_INFEASIBLE_RECTANGLE_COLLECTION_SECONDS);
